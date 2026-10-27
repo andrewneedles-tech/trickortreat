@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-<title>Trick-or-Treat Tracker</title>
+<title>Trick-or-Treat Tracker (Mapa de Halloween)</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -33,43 +33,47 @@
   #routeTools button { flex: 1; padding: 10px 6px; font-size: 14px; }
   .lbl { background: rgba(0,0,0,.75); color: #fff; border: 0; border-radius: 6px; padding: 2px 6px; font-weight: 600; box-shadow: none; }
   .lbl::before { display: none; }
+  .es { color: #d9c4e6; font-weight: 400; font-size: .85em; }
+  #tools button .es, #routeTools button .es { font-size: 11px; }
 </style>
 </head>
 <body>
 
 <div id="join">
-  <h1>🎃 Trick-or-Treat Tracker</h1>
-  <div class="sub">See where everyone is on the map, plus the planned route.</div>
-  <label for="name">Your name</label>
-  <input id="name" placeholder="e.g. Andrew" maxlength="20">
-  <label for="key">Group key</label>
-  <input id="key" placeholder="Get this from whoever made the group" autocapitalize="off" autocomplete="off">
+  <h1>🎃 Trick-or-Treat Tracker<br><small class="es">(Mapa para pedir dulces)</small></h1>
+  <div class="sub">See where everyone is on the map, plus the planned route.<br><small class="es">(Mira dónde está cada quien en el mapa y la ruta planeada.)</small></div>
+  <label for="name">Your name<br><small class="es">(Tu nombre)</small></label>
+  <input id="name" placeholder="e.g. Andrew (ej. Andrew)" maxlength="20">
+  <label for="key">Group key<br><small class="es">(Clave del grupo)</small></label>
+  <input id="key" placeholder="From the group maker (Pídela a quien hizo el grupo)" autocapitalize="off" autocomplete="off">
   <div class="row">
-    <button id="joinBtn">Join</button>
-    <button id="newBtn" class="ghost">New group</button>
+    <button id="joinBtn">Join<br><small class="es">(Entrar)</small></button>
+    <button id="newBtn" class="ghost">New group<br><small class="es">(Grupo nuevo)</small></button>
   </div>
   <div class="note">
-    Only people with the key can see the group. Locations are scrambled before they leave your phone.<br><br>
-    <b>Keep this page open with the screen on</b> while you walk. Phones stop sending location when the screen locks or you switch apps.
+    Only people with the key can see the group. Locations are scrambled before they leave your phone.<br>
+    <span class="es">(Solo quienes tienen la clave pueden ver el grupo. Las ubicaciones se cifran antes de salir de tu teléfono.)</span><br><br>
+    <b>Keep this page open with the screen on</b> while you walk. Phones stop sending location when the screen locks or you switch apps.<br>
+    <span class="es">(<b>Deja esta página abierta con la pantalla encendida</b> mientras caminas. El teléfono deja de enviar tu ubicación si se bloquea la pantalla o cambias de app.)</span>
   </div>
 </div>
 
 <div id="app">
   <div id="map"></div>
   <div id="bar">
-    <div id="status">Starting...</div>
+    <div id="status">Starting... (Iniciando...)</div>
     <div id="people"></div>
     <div id="tools">
-      <button id="meBtn" class="ghost">📍 Me</button>
-      <button id="allBtn" class="ghost">👥 All</button>
-      <button id="routeBtn" class="ghost">✏️ Route</button>
-      <button id="shareBtn" class="ghost">🔗 Invite</button>
-      <button id="leaveBtn" class="ghost">Leave</button>
+      <button id="meBtn" class="ghost">📍 Me<br><small class="es">(Yo)</small></button>
+      <button id="allBtn" class="ghost">👥 All<br><small class="es">(Todos)</small></button>
+      <button id="routeBtn" class="ghost">✏️ Route<br><small class="es">(Ruta)</small></button>
+      <button id="shareBtn" class="ghost">🔗 Invite<br><small class="es">(Invitar)</small></button>
+      <button id="leaveBtn" class="ghost">Leave<br><small class="es">(Salir)</small></button>
     </div>
     <div id="routeTools">
-      <button id="undoBtn" class="ghost">Undo</button>
-      <button id="clearBtn" class="ghost">Clear</button>
-      <button id="saveRouteBtn">Save route</button>
+      <button id="undoBtn" class="ghost">Undo<br><small class="es">(Deshacer)</small></button>
+      <button id="clearBtn" class="ghost">Clear<br><small class="es">(Borrar)</small></button>
+      <button id="saveRouteBtn">Save route<br><small class="es">(Guardar ruta)</small></button>
     </div>
   </div>
 </div>
@@ -103,8 +107,8 @@ $("joinBtn").onclick = join;
 async function join() {
   me.name = $("name").value.trim();
   groupKey = $("key").value.trim().toLowerCase();
-  if (!me.name) return alert("Type your name first.");
-  if (groupKey.length < 6) return alert("Group key needs at least 6 characters. Tap New group to make one.");
+  if (!me.name) return alert("Type your name first.\n(Primero escribe tu nombre.)");
+  if (groupKey.length < 6) return alert("Group key needs at least 6 characters. Tap New group to make one.\n(La clave necesita al menos 6 caracteres. Toca Grupo nuevo para crear una.)");
   localStorage.setItem("tt_name", me.name);
   localStorage.setItem("tt_key", groupKey);
   history.replaceState(null, "", location.pathname);
@@ -147,9 +151,9 @@ async function unlock(text) {
 async function send(obj) {
   try {
     const r = await fetch(RELAY + topic, { method: "POST", body: await lock(obj) });
-    if (r.status === 429) say("Sending too often. Will retry in a minute.");
+    if (r.status === 429) say("Sending too often. Will retry in a minute.", "Demasiados envíos. Se reintentará en un minuto.");
     return r.ok;
-  } catch (e) { say("No connection. Will keep trying."); return false; }
+  } catch (e) { say("No connection. Will keep trying.", "Sin conexión. Seguirá intentando."); return false; }
 }
 async function loadRecent() {
   try {
@@ -161,8 +165,8 @@ async function loadRecent() {
 function listen() {
   events = new EventSource(RELAY + topic + "/sse");
   events.onmessage = async e => { const m = JSON.parse(e.data); if (m.event === "message") await handle(m.message); };
-  events.onerror = () => say("Reconnecting...");
-  events.onopen = () => say("Connected. Sharing your location.");
+  events.onerror = () => say("Reconnecting...", "Reconectando...");
+  events.onopen = () => say("Connected. Sharing your location.", "Conectado. Compartiendo tu ubicación.");
 }
 async function handle(text) {
   const m = await unlock(text);
@@ -198,35 +202,36 @@ function updatePerson(m) {
   }
   if (p.t && m.t < p.t) return;   // older update
   Object.assign(p, { name: m.name, lat: m.lat, lng: m.lng, t: m.t });
-  p.marker.setLatLng([m.lat, m.lng]).setTooltipContent(m.id === me.id ? m.name + " (you)" : m.name);
+  p.marker.setLatLng([m.lat, m.lng]).setTooltipContent(m.id === me.id ? m.name + " (you / tú)" : m.name);
   renderPeople();
 }
 function renderPeople() {
   const list = Object.entries(people).sort((a, b) => b[1].t - a[1].t);
   $("people").innerHTML = list.map(([id, p]) => {
     const mins = Math.round((Date.now() - p.t) / 60000);
-    const ago = mins < 1 ? "just now" : mins + " min ago";
-    return `<div class="p" data-id="${id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${id === me.id ? " (you)" : ""}<span class="ago">${ago}</span></div>`;
-  }).join("") || "Waiting for others to join...";
+    const ago = mins < 1 ? "just now (ahora)" : mins + " min ago (hace " + mins + " min)";
+    return `<div class="p" data-id="${id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${id === me.id ? " (you / tú)" : ""}<span class="ago">${ago}</span></div>`;
+  }).join("") || "Waiting for others to join...<br><span class=\"es\">(Esperando a que otros se unan...)</span>";
   document.querySelectorAll(".p").forEach(el => el.onclick = () => {
     const p = people[el.dataset.id]; map.setView([p.lat, p.lng], 18);
   });
 }
 setInterval(() => map && renderPeople(), 30000);
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function say(t) { $("status").textContent = t; }
+function say(en, es) { $("status").innerHTML = esc(en) + (es ? "<br><span class=\"es\">(" + esc(es) + ")</span>" : ""); }
 
 // ---- GPS ----
 let firstFix = true;
 function startGPS() {
-  if (!navigator.geolocation) return say("This browser can't share location.");
+  if (!navigator.geolocation) return say("This browser can't share location.", "Este navegador no puede compartir la ubicación.");
   watchId = navigator.geolocation.watchPosition(pos => {
     myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     updatePerson({ id: me.id, name: me.name, ...myPos, t: Date.now() });
     if (firstFix) { map.setView([myPos.lat, myPos.lng], 17); firstFix = false; }
     maybeSend();
   }, err => {
-    say(err.code === 1 ? "Location is blocked. Allow location for this site in your browser settings." : "Looking for GPS...");
+    if (err.code === 1) say("Location is blocked. Allow location for this site in your browser settings.", "La ubicación está bloqueada. Permite la ubicación para este sitio en la configuración del navegador.");
+    else say("Looking for GPS...", "Buscando GPS...");
   }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
   setInterval(maybeSend, 15000);
 }
@@ -252,7 +257,7 @@ function showRoute(points, by) {
   routeLine = route.length > 1
     ? L.polyline(route, { color: "#ff8a1f", weight: 6, opacity: 0.85, dashArray: "10 8" }).addTo(map)
     : null;
-  if (by && by !== me.name) say(by + " updated the route.");
+  if (by && by !== me.name) say(by + " updated the route.", by + " actualizó la ruta.");
 }
 function drawDraft() {
   if (draftLine) map.removeLayer(draftLine);
@@ -261,34 +266,34 @@ function drawDraft() {
 $("routeBtn").onclick = () => {
   drawing = !drawing;
   $("routeTools").style.display = drawing ? "flex" : "none";
-  $("routeBtn").textContent = drawing ? "✖ Cancel" : "✏️ Route";
-  if (drawing) { draft = route.slice(); drawDraft(); say("Tap the map along the streets you plan to walk."); }
-  else { if (draftLine) map.removeLayer(draftLine); draftLine = null; say("Route drawing cancelled."); }
+  $("routeBtn").innerHTML = drawing ? "✖ Cancel<br><small class=\"es\">(Cancelar)</small>" : "✏️ Route<br><small class=\"es\">(Ruta)</small>";
+  if (drawing) { draft = route.slice(); drawDraft(); say("Tap the map along the streets you plan to walk.", "Toca el mapa por las calles que piensan caminar."); }
+  else { if (draftLine) map.removeLayer(draftLine); draftLine = null; say("Route drawing cancelled.", "Se canceló el dibujo de la ruta."); }
 };
 $("undoBtn").onclick = () => { draft.pop(); drawDraft(); };
 $("clearBtn").onclick = () => { draft = []; drawDraft(); };
 $("saveRouteBtn").onclick = async () => {
   const pts = draft.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]);
   if (await send({ type: "route", points: pts, by: me.name, t: Date.now() })) {
-    showRoute(pts); say("Route saved. Everyone can see it now.");
+    showRoute(pts); say("Route saved. Everyone can see it now.", "Ruta guardada. Ya todos la pueden ver.");
   }
   $("routeBtn").click();
 };
 
 // ---- Buttons ----
-$("meBtn").onclick = () => myPos ? map.setView([myPos.lat, myPos.lng], 18) : say("Still finding your location...");
+$("meBtn").onclick = () => myPos ? map.setView([myPos.lat, myPos.lng], 18) : say("Still finding your location...", "Todavía buscando tu ubicación...");
 $("allBtn").onclick = () => {
   const pts = Object.values(people).map(p => [p.lat, p.lng]).concat(route);
   if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 18 });
 };
 $("shareBtn").onclick = async () => {
   const link = location.origin + location.pathname + "#key=" + encodeURIComponent(groupKey);
-  const text = "Join our trick-or-treat map: " + link;
+  const text = "Join our trick-or-treat map: " + link + "\n(Únete a nuestro mapa de Halloween)";
   if (navigator.share) { try { await navigator.share({ text }); } catch (e) {} }
-  else { prompt("Copy and text this link:", link); }
+  else { prompt("Copy and text this link:\n(Copia y envía este enlace:)", link); }
 };
 $("leaveBtn").onclick = async () => {
-  if (!confirm("Stop sharing your location?")) return;
+  if (!confirm("Stop sharing your location?\n(¿Dejar de compartir tu ubicación?)")) return;
   if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   await send({ type: "bye", id: me.id, t: Date.now() });
   if (events) events.close();
