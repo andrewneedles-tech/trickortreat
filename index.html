@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Trick-or-Treat Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; background: #1a1020; color: #fff; }
+  #join { padding: 24px; max-width: 420px; margin: 0 auto; }
+  h1 { color: #ff8a1f; margin: 10px 0 4px; font-size: 26px; }
+  .sub { color: #cbb; margin-bottom: 20px; }
+  label { display: block; margin: 14px 0 6px; font-weight: 600; }
+  input { width: 100%; padding: 12px; font-size: 17px; border-radius: 10px; border: 1px solid #555; background: #2a1d33; color: #fff; }
+  button { padding: 12px 14px; font-size: 16px; border-radius: 10px; border: 0; background: #ff8a1f; color: #1a1020; font-weight: 700; }
+  button.ghost { background: #3a2a46; color: #fff; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  .row > * { flex: 1; }
+  .note { font-size: 13px; color: #b9a; margin-top: 16px; line-height: 1.45; }
+  #app { display: none; height: 100%; flex-direction: column; }
+  #map { flex: 1; }
+  #bar { background: #24172d; padding: 8px; }
+  #status { font-size: 13px; color: #fc9; margin-bottom: 6px; }
+  #people { font-size: 14px; max-height: 96px; overflow-y: auto; margin-bottom: 6px; }
+  .p { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .ago { color: #a99; font-size: 12px; margin-left: auto; }
+  #tools { display: flex; gap: 6px; flex-wrap: wrap; }
+  #tools button { flex: 1; padding: 10px 6px; font-size: 14px; }
+  #routeTools { display: none; gap: 6px; margin-top: 6px; }
+  #routeTools button { flex: 1; padding: 10px 6px; font-size: 14px; }
+  .lbl { background: rgba(0,0,0,.75); color: #fff; border: 0; border-radius: 6px; padding: 2px 6px; font-weight: 600; box-shadow: none; }
+  .lbl::before { display: none; }
+</style>
+</head>
+<body>
+
+<div id="join">
+  <h1>🎃 Trick-or-Treat Tracker</h1>
+  <div class="sub">See where everyone is on the map, plus the planned route.</div>
+  <label for="name">Your name</label>
+  <input id="name" placeholder="e.g. Andrew" maxlength="20">
+  <label for="key">Group key</label>
+  <input id="key" placeholder="Get this from whoever made the group" autocapitalize="off" autocomplete="off">
+  <div class="row">
+    <button id="joinBtn">Join</button>
+    <button id="newBtn" class="ghost">New group</button>
+  </div>
+  <div class="note">
+    Only people with the key can see the group. Locations are scrambled before they leave your phone.<br><br>
+    <b>Keep this page open with the screen on</b> while you walk. Phones stop sending location when the screen locks or you switch apps.
+  </div>
+</div>
+
+<div id="app">
+  <div id="map"></div>
+  <div id="bar">
+    <div id="status">Starting...</div>
+    <div id="people"></div>
+    <div id="tools">
+      <button id="meBtn" class="ghost">📍 Me</button>
+      <button id="allBtn" class="ghost">👥 All</button>
+      <button id="routeBtn" class="ghost">✏️ Route</button>
+      <button id="shareBtn" class="ghost">🔗 Invite</button>
+      <button id="leaveBtn" class="ghost">Leave</button>
+    </div>
+    <div id="routeTools">
+      <button id="undoBtn" class="ghost">Undo</button>
+      <button id="clearBtn" class="ghost">Clear</button>
+      <button id="saveRouteBtn">Save route</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Settings ----
+const RELAY = "https://ntfy.sh/";   // free message relay; topic name comes from the group key
+const SEND_EVERY_MS = 60000;        // send location at most once a minute (relay allows ~250 messages a day per phone)
+const COLORS = ["#ff8a1f","#4fc3f7","#9ccc65","#f06292","#ffd54f","#ba68c8","#4db6ac","#e57373"];
+
+const $ = id => document.getElementById(id);
+let me = { id: localStorage.getItem("tt_id") || Math.random().toString(36).slice(2, 10), name: "" };
+localStorage.setItem("tt_id", me.id);
+let groupKey = "", topic = "", aesKey = null;
+let map, myPos = null, lastSent = 0, watchId = null, events = null, wakeLock = null;
+const people = {};          // id -> {name, lat, lng, t, marker, color}
+let route = [], routeLine = null, drawing = false, draft = [], draftLine = null;
+
+// ---- Join screen ----
+$("name").value = localStorage.getItem("tt_name") || "";
+const fromLink = new URLSearchParams(location.hash.slice(1)).get("key");
+$("key").value = fromLink || localStorage.getItem("tt_key") || "";
+
+$("newBtn").onclick = () => {
+  const words = ["pumpkin","ghost","witch","candy","bat","moon","spooky","owl","broom","cat"];
+  const w = () => words[Math.floor(Math.random() * words.length)];
+  $("key").value = w() + "-" + w() + "-" + Math.floor(1000 + Math.random() * 9000);
+};
+$("joinBtn").onclick = join;
+
+async function join() {
+  me.name = $("name").value.trim();
+  groupKey = $("key").value.trim().toLowerCase();
+  if (!me.name) return alert("Type your name first.");
+  if (groupKey.length < 6) return alert("Group key needs at least 6 characters. Tap New group to make one.");
+  localStorage.setItem("tt_name", me.name);
+  localStorage.setItem("tt_key", groupKey);
+  history.replaceState(null, "", location.pathname);
+
+  await setupCrypto(groupKey);
+  $("join").style.display = "none";
+  $("app").style.display = "flex";
+  startMap();
+  await loadRecent();
+  listen();
+  startGPS();
+  keepAwake();
+}
+
+// ---- Scrambling: the key makes both the private channel name and the lock ----
+async function setupCrypto(key) {
+  const enc = new TextEncoder();
+  const hash = await crypto.subtle.digest("SHA-256", enc.encode("tt-topic:" + key));
+  topic = "tt_" + [...new Uint8Array(hash)].slice(0, 12).map(b => b.toString(16).padStart(2, "0")).join("");
+  const base = await crypto.subtle.importKey("raw", enc.encode(key), "PBKDF2", false, ["deriveKey"]);
+  aesKey = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", salt: enc.encode("trick-or-treat"), iterations: 100000, hash: "SHA-256" },
+    base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+}
+async function lock(obj) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, new TextEncoder().encode(JSON.stringify(obj)));
+  const all = new Uint8Array(12 + data.byteLength); all.set(iv); all.set(new Uint8Array(data), 12);
+  return btoa(String.fromCharCode(...all));
+}
+async function unlock(text) {
+  try {
+    const all = Uint8Array.from(atob(text), c => c.charCodeAt(0));
+    const data = await crypto.subtle.decrypt({ name: "AES-GCM", iv: all.slice(0, 12) }, aesKey, all.slice(12));
+    return JSON.parse(new TextDecoder().decode(data));
+  } catch (e) { return null; }   // not ours or wrong key
+}
+
+// ---- Sending and receiving ----
+async function send(obj) {
+  try {
+    const r = await fetch(RELAY + topic, { method: "POST", body: await lock(obj) });
+    if (r.status === 429) say("Sending too often. Will retry in a minute.");
+    return r.ok;
+  } catch (e) { say("No connection. Will keep trying."); return false; }
+}
+async function loadRecent() {
+  try {
+    const r = await fetch(RELAY + topic + "/json?poll=1&since=6h");
+    const lines = (await r.text()).trim().split("\n").filter(Boolean);
+    for (const l of lines) { const m = JSON.parse(l); if (m.event === "message") await handle(m.message); }
+  } catch (e) {}
+}
+function listen() {
+  events = new EventSource(RELAY + topic + "/sse");
+  events.onmessage = async e => { const m = JSON.parse(e.data); if (m.event === "message") await handle(m.message); };
+  events.onerror = () => say("Reconnecting...");
+  events.onopen = () => say("Connected. Sharing your location.");
+}
+async function handle(text) {
+  const m = await unlock(text);
+  if (!m) return;
+  if (m.type === "pos") updatePerson(m);
+  else if (m.type === "route") showRoute(m.points, m.by);
+  else if (m.type === "bye" && people[m.id]) { map.removeLayer(people[m.id].marker); delete people[m.id]; renderPeople(); }
+}
+
+// ---- Map ----
+function startMap() {
+  map = L.map("map", { zoomControl: false }).setView([33.93, -118.21], 15);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: "© OpenStreetMap"
+  }).addTo(map);
+  map.on("click", e => {
+    if (!drawing) return;
+    draft.push([e.latlng.lat, e.latlng.lng]);
+    drawDraft();
+  });
+}
+function colorFor(id) {
+  let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
+function updatePerson(m) {
+  let p = people[m.id];
+  if (!p) {
+    const color = colorFor(m.id);
+    const marker = L.circleMarker([m.lat, m.lng], { radius: 10, color: "#fff", weight: 3, fillColor: color, fillOpacity: 1 })
+      .addTo(map).bindTooltip(m.name, { permanent: true, direction: "top", offset: [0, -10], className: "lbl" });
+    p = people[m.id] = { color, marker };
+  }
+  if (p.t && m.t < p.t) return;   // older update
+  Object.assign(p, { name: m.name, lat: m.lat, lng: m.lng, t: m.t });
+  p.marker.setLatLng([m.lat, m.lng]).setTooltipContent(m.id === me.id ? m.name + " (you)" : m.name);
+  renderPeople();
+}
+function renderPeople() {
+  const list = Object.entries(people).sort((a, b) => b[1].t - a[1].t);
+  $("people").innerHTML = list.map(([id, p]) => {
+    const mins = Math.round((Date.now() - p.t) / 60000);
+    const ago = mins < 1 ? "just now" : mins + " min ago";
+    return `<div class="p" data-id="${id}"><span class="dot" style="background:${p.color}"></span>${esc(p.name)}${id === me.id ? " (you)" : ""}<span class="ago">${ago}</span></div>`;
+  }).join("") || "Waiting for others to join...";
+  document.querySelectorAll(".p").forEach(el => el.onclick = () => {
+    const p = people[el.dataset.id]; map.setView([p.lat, p.lng], 18);
+  });
+}
+setInterval(() => map && renderPeople(), 30000);
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function say(t) { $("status").textContent = t; }
+
+// ---- GPS ----
+let firstFix = true;
+function startGPS() {
+  if (!navigator.geolocation) return say("This browser can't share location.");
+  watchId = navigator.geolocation.watchPosition(pos => {
+    myPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    updatePerson({ id: me.id, name: me.name, ...myPos, t: Date.now() });
+    if (firstFix) { map.setView([myPos.lat, myPos.lng], 17); firstFix = false; }
+    maybeSend();
+  }, err => {
+    say(err.code === 1 ? "Location is blocked. Allow location for this site in your browser settings." : "Looking for GPS...");
+  }, { enableHighAccuracy: true, maximumAge: 10000, timeout: 30000 });
+  setInterval(maybeSend, 15000);
+}
+function maybeSend() {
+  if (!myPos || Date.now() - lastSent < SEND_EVERY_MS) return;
+  lastSent = Date.now();
+  send({ type: "pos", id: me.id, name: me.name, lat: +myPos.lat.toFixed(5), lng: +myPos.lng.toFixed(5), t: Date.now() });
+}
+// Keeps the screen from sleeping while the page is open (Android Chrome, iPhone iOS 16.4+).
+async function keepAwake() {
+  try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && $("app").style.display === "flex") {
+    keepAwake(); lastSent = 0; maybeSend();
+  }
+});
+
+// ---- Route ----
+function showRoute(points, by) {
+  route = points || [];
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = route.length > 1
+    ? L.polyline(route, { color: "#ff8a1f", weight: 6, opacity: 0.85, dashArray: "10 8" }).addTo(map)
+    : null;
+  if (by && by !== me.name) say(by + " updated the route.");
+}
+function drawDraft() {
+  if (draftLine) map.removeLayer(draftLine);
+  draftLine = L.polyline(draft, { color: "#ffd54f", weight: 5 }).addTo(map);
+}
+$("routeBtn").onclick = () => {
+  drawing = !drawing;
+  $("routeTools").style.display = drawing ? "flex" : "none";
+  $("routeBtn").textContent = drawing ? "✖ Cancel" : "✏️ Route";
+  if (drawing) { draft = route.slice(); drawDraft(); say("Tap the map along the streets you plan to walk."); }
+  else { if (draftLine) map.removeLayer(draftLine); draftLine = null; say("Route drawing cancelled."); }
+};
+$("undoBtn").onclick = () => { draft.pop(); drawDraft(); };
+$("clearBtn").onclick = () => { draft = []; drawDraft(); };
+$("saveRouteBtn").onclick = async () => {
+  const pts = draft.map(p => [+p[0].toFixed(5), +p[1].toFixed(5)]);
+  if (await send({ type: "route", points: pts, by: me.name, t: Date.now() })) {
+    showRoute(pts); say("Route saved. Everyone can see it now.");
+  }
+  $("routeBtn").click();
+};
+
+// ---- Buttons ----
+$("meBtn").onclick = () => myPos ? map.setView([myPos.lat, myPos.lng], 18) : say("Still finding your location...");
+$("allBtn").onclick = () => {
+  const pts = Object.values(people).map(p => [p.lat, p.lng]).concat(route);
+  if (pts.length) map.fitBounds(pts, { padding: [40, 40], maxZoom: 18 });
+};
+$("shareBtn").onclick = async () => {
+  const link = location.origin + location.pathname + "#key=" + encodeURIComponent(groupKey);
+  const text = "Join our trick-or-treat map: " + link;
+  if (navigator.share) { try { await navigator.share({ text }); } catch (e) {} }
+  else { prompt("Copy and text this link:", link); }
+};
+$("leaveBtn").onclick = async () => {
+  if (!confirm("Stop sharing your location?")) return;
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  await send({ type: "bye", id: me.id, t: Date.now() });
+  if (events) events.close();
+  if (wakeLock) wakeLock.release();
+  location.reload();
+};
+</script>
+</body>
+</html>
